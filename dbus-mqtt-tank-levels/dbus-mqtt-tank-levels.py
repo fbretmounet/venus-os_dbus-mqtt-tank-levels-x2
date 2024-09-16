@@ -98,12 +98,6 @@ if "DEFAULT" in config and "type2" in config["DEFAULT"]:
 else:
     type2 = 0
 
-# get type Tank #3
-if "DEFAULT" in config and "type3" in config["DEFAULT"]:
-    type3 = int(config["DEFAULT"]["type3"])
-else:
-    type3 = 0
-
 # get capacity Tank #1
 if "DEFAULT" in config and "capacity" in config["DEFAULT"]:
     capacity = float(config["DEFAULT"]["capacity"])
@@ -116,12 +110,6 @@ if "DEFAULT" in config and "capacity2" in config["DEFAULT"]:
 else:
     capacity2 = 100
 
-# get capacity Tank #3
-if "DEFAULT" in config and "capacity3" in config["DEFAULT"]:
-    capacity3 = float(config["DEFAULT"]["capacity3"])
-else:
-    capacity3 = 100
-    
 # get standard Tank #1
 if "DEFAULT" in config and "standard" in config["DEFAULT"]:
     standard = int(config["DEFAULT"]["standard"])
@@ -134,12 +122,6 @@ if "DEFAULT" in config and "standard2" in config["DEFAULT"]:
 else:
     standard2 = 0  
 
-# get standard Tank #3
-if "DEFAULT" in config and "standard3" in config["DEFAULT"]:
-    standard3 = int(config["DEFAULT"]["standard3"])
-else:
-    standard3 = 0 
-    
 # set variables
 connected = 0
 
@@ -152,11 +134,6 @@ last_changed2 = 0
 last_updated2 = 0
 level2 = -999
 remaining2 = None
-
-last_changed3 = 0
-last_updated3 = 0
-level3 = -999
-remaining3 = None
 
 # MQTT requests
 def on_disconnect(client, userdata, rc):
@@ -203,17 +180,16 @@ def on_message(client, userdata, msg):
             if msg.payload != "" and msg.payload != b"":
                 jsonpayload = json.loads(msg.payload)
 
-                if "level" in jsonpayload or "value" in jsonpayload:
+                if "level" in jsonpayload:
                     last_changed = int(time())
                     if "level" in jsonpayload:
                         level = float(jsonpayload["level"])
-                    elif "value" in jsonpayload:
-                        level = float(jsonpayload["value"])
 
                     # check if remaining exists
                     if "remaining" in jsonpayload:
                         remaining = float(jsonpayload["remaining"])
               
+                if "level2" in jsonpayload:                          
                     if "level2" in jsonpayload:
                         last_changed2 = int(time())
                         level2 = float(jsonpayload["level2"])
@@ -222,19 +198,7 @@ def on_message(client, userdata, msg):
                     if "remaining2" in jsonpayload:
                         remaining2 = float(jsonpayload["remaining2"])
 
-                    if "level3" in jsonpayload:
-                        last_changed3 = int(time())
-                        level3 = float(jsonpayload["level3"])
-                        
-                    # check if remaining3 exists
-                    if "remaining3" in jsonpayload:
-                        remaining3 = float(jsonpayload["remaining3"])
-
-                else:
-                    logging.error(
-                        'Received JSON MQTT message does not include a level object. Expected at least: {"level": 22.0} or {"value": 22.0}'
-                    )
-                    logging.debug("MQTT payload: " + str(msg.payload)[1:])
+                logging.debug("MQTT payload: " + str(msg.payload)[1:])
                     
             else:
                 logging.warning(
@@ -422,86 +386,6 @@ class DbusMqttLevelService2:
         logging.debug("someone else updated %s to %s" % (path, value))
         return True  # accept the change
     
-class DbusMqttLevelService3:
-    def __init__(
-        self,
-        servicename,
-        deviceinstance,
-        paths,
-        productname="MQTT Tank Levels 3",
-        customname="MQTT Tank Levels 3",
-        connection="MQTT Tank Levels Service 3",
-    ):
-        self._dbusservice = VeDbusService(servicename,dbusconnection())
-        self._paths = paths
-
-        logging.info("Starting DbusMqttLevelService3")
-        logging.debug("%s /DeviceInstance = %d" % (servicename, deviceinstance))
-
-        # Create the management objects, as specified in the ccgx dbus-api document
-        self._dbusservice.add_path("/Mgmt/ProcessName", __file__)
-        self._dbusservice.add_path(
-            "/Mgmt/ProcessVersion",
-            "Unkown version, and running on Python " + platform.python_version(),
-        )
-        self._dbusservice.add_path("/Mgmt/Connection", connection)
-
-        # Create the mandatory objects
-        self._dbusservice.add_path("/DeviceInstance", deviceinstance)
-        self._dbusservice.add_path("/ProductId", 0xFFFF)
-        self._dbusservice.add_path("/ProductName", productname)
-        self._dbusservice.add_path("/CustomName", customname)
-        self._dbusservice.add_path("/FirmwareVersion", "0.0.2 (20240715)")
-        # self._dbusservice.add_path('/HardwareVersion', '')
-        self._dbusservice.add_path("/Connected", 1)
-
-        self._dbusservice.add_path("/Status", 0)
-        self._dbusservice.add_path("/FluidType", type3)
-        self._dbusservice.add_path("/Capacity", capacity3)
-        self._dbusservice.add_path("/Standard", standard3)
-
-        for path, settings in self._paths.items():
-            self._dbusservice.add_path(
-                path,
-                settings["initial"],
-                gettextcallback=settings["textformat"],
-                writeable=True,
-                onchangecallback=self._handlechangedvalue,
-            )
-
-        GLib.timeout_add(1000, self._update)  # pause 1000ms before the next request
-
-    def _update(self):
-        global last_changed3, last_updated3
-
-        now = int(time())
-
-        if last_changed3 != last_updated3:
-            self._dbusservice["/Level"] = (
-                round(level3, 1) if level3 is not None else None
-            )
-            self._dbusservice["/Remaining"] = (
-                round(remaining3, 3) if remaining3 is not None else None
-            )
-
-            log_message = "Level3: {:.1f} %".format(level3)
-            log_message += (
-                " - Remaining3: {:.1f} m3".format(remaining3) if remaining3 is not None else ""
-            )
-            logging.info(log_message)
-
-            last_updated3 = last_changed3
-
-        # increment UpdateIndex - to show that new data is available
-        index = self._dbusservice["/UpdateIndex"] + 1  # increment index
-        if index > 255:  # maximum value of the index
-            index = 0  # overflow from 255 to 0
-        self._dbusservice["/UpdateIndex"] = index
-        return True
-
-    def _handlechangedvalue(self, path, value):
-        logging.debug("someone else updated %s to %s" % (path, value))
-        return True  # accept the change
 
 def main():
     _thread.daemon = True  # allow the program to quit
@@ -610,14 +494,6 @@ def main():
             paths=paths_dbus,
         )
     
-    if int(config["DEFAULT"]["instances"]) > 2 :
-        DbusMqttLevelService3(
-            servicename="com.victronenergy.tank.mqtt_tank_levels_"
-            + str(config["MQTT"]["device_instance3"]),
-            deviceinstance=int(config["MQTT"]["device_instance3"]),
-            customname=config["MQTT"]["device_name3"],
-            paths=paths_dbus,
-        )
     
     logging.info(
         "Connected to dbus and switching over to GLib.MainLoop() (= event based)"
